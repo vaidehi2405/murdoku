@@ -235,25 +235,38 @@ async function generateSinglePuzzle(
       repairedPuzzle.id = `puzzle-${caseId}`;
       repairedPuzzle.caseNumber = caseNumber;
 
-      if (isDuplicate(repairedPuzzle)) {
+      const repairedValidation = validateGeneratedPuzzle(repairedPuzzle);
+
+      if (!repairedValidation.valid || !repairedValidation.puzzle) {
+        const error = `Repair failed validation: ${repairedValidation.errors.join('; ')}`;
+        markRejected(caseId, error);
+        generationLogs.push({
+          caseId, status: 'rejected', difficulty, theme,
+          durationMs: Date.now() - startTime, solutionCount: repairedValidation.solutionCount,
+          repairAttempts: repairResult.attempts, error,
+        });
+        return;
+      }
+
+      if (isDuplicate(repairedValidation.puzzle)) {
         markRejected(caseId, 'Duplicate after repair');
         generationLogs.push({
           caseId, status: 'rejected', difficulty, theme,
-          durationMs: Date.now() - startTime, solutionCount: repairResult.finalSolutionCount,
+          durationMs: Date.now() - startTime, solutionCount: repairedValidation.solutionCount,
           repairAttempts: repairResult.attempts, error: 'Duplicate after repair',
         });
         return;
       }
 
-      // Update the inventory entry with the repaired puzzle
-      addToGeneratedPool(repairedPuzzle, Date.now() - startTime);
-      promoteToApproved(caseId, 1, repairResult.attempts);
+      // Update the inventory entry with the repaired and fully revalidated puzzle
+      addToGeneratedPool(repairedValidation.puzzle, Date.now() - startTime);
+      promoteToApproved(caseId, repairedValidation.solutionCount, repairResult.attempts, repairedValidation.qualityMetrics);
       promoteToAvailable(caseId);
       usedThemes.push(theme);
 
       generationLogs.push({
         caseId, status: 'approved', difficulty, theme,
-        durationMs: Date.now() - startTime, solutionCount: 1,
+        durationMs: Date.now() - startTime, solutionCount: repairedValidation.solutionCount,
         repairAttempts: repairResult.attempts,
       });
 
