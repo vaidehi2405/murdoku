@@ -2,6 +2,9 @@ import type { PuzzleDefinition, Difficulty } from '../../types/puzzleTypes';
 import { countValidSolutions } from './puzzleSolver';
 import { evaluateClue } from './validator';
 
+export const MIN_DEDUCTION_DEPTH = 2;
+export const MIN_HUMAN_SOLVABILITY_SCORE = 80;
+
 export interface QualityMetrics {
   solutionCount: number;
   directClueCount: number;
@@ -37,7 +40,7 @@ export function analyzeQualityMetrics(puzzle: PuzzleDefinition): QualityMetrics 
   const suspectsWithDirectClues = new Set<string>();
 
   for (const clue of puzzle.clues) {
-    const type = clue.condition.type;
+    const type = clue.condition.type as string;
     // Direct clues: in_room, not_in_room, on_object, beside_object, cell
     if (type === 'in_room' || type === 'not_in_room' || type === 'on_object' || type === 'beside_object' || type === 'cell') {
       directClueCount++;
@@ -58,6 +61,7 @@ export function analyzeQualityMetrics(puzzle: PuzzleDefinition): QualityMetrics 
 
   // 3. Clue Redundancy Analysis
   let redundantClueCount = 0;
+  const maxAllowedRedundant = 2;
   const suspectIds = puzzle.suspects.map((s) => s.id);
 
   for (let i = 0; i < puzzle.clues.length; i++) {
@@ -121,8 +125,6 @@ export function analyzeQualityMetrics(puzzle: PuzzleDefinition): QualityMetrics 
       if (candidates[sId].size === 1) {
         const fixedCoord = Array.from(candidates[sId])[0];
         const [fR, fC] = fixedCoord.split(',').map(Number);
-        const suspectName = puzzle.suspects.find((s) => s.id === sId)?.name || sId;
-
         // Eliminate row and column from other suspects
         for (const otherId of suspectIds) {
           if (otherId === sId) continue;
@@ -183,6 +185,14 @@ export function analyzeQualityMetrics(puzzle: PuzzleDefinition): QualityMetrics 
   else if (deductionDepth <= 5) estimatedDifficulty = 'medium';
   else if (deductionDepth <= 7) estimatedDifficulty = 'hard';
   else estimatedDifficulty = 'expert';
+
+  if (deductionDepth < MIN_DEDUCTION_DEPTH) {
+    qualityErrors.push(`Insufficient deduction depth (${deductionDepth}). Min required: ${MIN_DEDUCTION_DEPTH}`);
+  }
+
+  if (humanSolvabilityScore < MIN_HUMAN_SOLVABILITY_SCORE) {
+    qualityErrors.push(`Low human solvability score (${humanSolvabilityScore}). Min required: ${MIN_HUMAN_SOLVABILITY_SCORE}`);
+  }
 
   const isQualityPassed = solutionCount === 1 && qualityErrors.length === 0;
 

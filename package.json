@@ -8,7 +8,9 @@
     "server": "npm --prefix server start",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "server/node_modules/.bin/tsx test/ruleEngine.test.ts && server/node_modules/.bin/tsx test/qualityGate.test.ts",
+    "audit:puzzles": "server/node_modules/.bin/tsx test/auditPuzzles.ts"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",

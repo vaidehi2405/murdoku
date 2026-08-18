@@ -145,11 +145,37 @@ function generateDisambiguatingClue(
   const coordStr = intended[suspectId];
   if (!coordStr) return null;
 
-  const [row, col] = coordStr.split(',').map(Number);
-  const cell = puzzle.cells[row][col];
   const clueId = `clue-repair-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
-  // Strategy 1: in_room clue
+  // Prefer suspect-to-suspect relational repair clues. Direct room placement is
+  // reserved as an emergency fallback and still must pass full post-repair gates.
+  const relationalClue = generateDirectionalClue(puzzle, suspectId, intended, clueId)
+    || generateSameRoomClue(puzzle, suspectId, intended, clueId)
+    || generateCornerClue(puzzle, suspectId, intended, clueId);
+  if (relationalClue) return relationalClue;
+
+  const existingDirectCount = puzzle.clues.filter((clue) => {
+    const type = clue.condition.type;
+    return type === 'in_room' || type === 'not_in_room' || type === 'on_object' || type === 'beside_object';
+  }).length;
+
+  if (existingDirectCount >= 1) return null;
+
+  return generateInRoomFallbackClue(puzzle, suspectId, intended, clueId);
+}
+
+function generateInRoomFallbackClue(
+  puzzle: PuzzleDefinition,
+  suspectId: string,
+  intended: Record<string, string>,
+  clueId: string
+): Clue | null {
+  const coordStr = intended[suspectId];
+  if (!coordStr) return null;
+
+  const [row, col] = coordStr.split(',').map(Number);
+  const cell = puzzle.cells[row][col];
+
   const condition: ClueCondition = {
     type: 'in_room' as ClueType,
     subject: suspectId,
@@ -158,10 +184,7 @@ function generateDisambiguatingClue(
 
   const suspect = puzzle.suspects.find((s) => s.id === suspectId);
   const room = puzzle.rooms[cell.roomId];
-
   const text = `${suspect?.name || suspectId} was in the ${room?.name || cell.roomId}.`;
-
-  // Verify this clue is true for intended placement
   const testClue: Clue = { id: clueId, suspectId, text, condition };
 
   const placements: Record<string, string> = {};
@@ -172,19 +195,14 @@ function generateDisambiguatingClue(
   const valid = evaluateClue(testClue, placements, puzzle);
   if (!valid) return null;
 
-  // Check it doesn't already exist
   const duplicate = puzzle.clues.some(
     (c) =>
       c.condition.type === condition.type &&
       c.condition.subject === condition.subject &&
       c.condition.reference === condition.reference
   );
-  if (duplicate) {
-    // Try directional clue instead
-    return generateDirectionalClue(puzzle, suspectId, intended, clueId);
-  }
 
-  return testClue;
+  return duplicate ? null : testClue;
 }
 
 /**
@@ -242,4 +260,65 @@ function generateDirectionalClue(
   }
 
   return null;
+}
+
+
+function generateSameRoomClue(
+  puzzle: PuzzleDefinition,
+  suspectId: string,
+  intended: Record<string, string>,
+  clueId: string
+): Clue | null {
+  const suspectCoord = intended[suspectId];
+  if (!suspectCoord) return null;
+  const [sRow, sCol] = suspectCoord.split(',').map(Number);
+  const suspectRoom = puzzle.cells[sRow][sCol].roomId;
+  const suspect = puzzle.suspects.find((s) => s.id === suspectId);
+
+  for (const other of puzzle.suspects) {
+    if (other.id === suspectId) continue;
+    const otherCoord = intended[other.id];
+    if (!otherCoord) continue;
+    const [oRow, oCol] = otherCoord.split(',').map(Number);
+    const otherRoom = puzzle.cells[oRow][oCol].roomId;
+    const type: ClueType = suspectRoom === otherRoom ? 'same_room' : 'not_same_room';
+
+    const exists = puzzle.clues.some(
+      (c) => c.condition.type === type && c.condition.subject === suspectId && c.condition.reference === other.id
+    );
+    if (exists) continue;
+
+    return {
+      id: clueId,
+      suspectId,
+      text: `${suspect?.name || suspectId} was ${type === 'same_room' ? 'in the same room as' : 'not in the same room as'} ${other.name}.`,
+      condition: { type, subject: suspectId, reference: other.id },
+    };
+  }
+
+  return null;
+}
+
+function generateCornerClue(
+  puzzle: PuzzleDefinition,
+  suspectId: string,
+  intended: Record<string, string>,
+  clueId: string
+): Clue | null {
+  const coordStr = intended[suspectId];
+  if (!coordStr) return null;
+  const [row, col] = coordStr.split(',').map(Number);
+  const isCorner = (row === 0 || row === puzzle.gridRows - 1) && (col === 0 || col === puzzle.gridCols - 1);
+  if (!isCorner) return null;
+
+  const exists = puzzle.clues.some((c) => c.condition.type === 'corner' && c.condition.subject === suspectId);
+  if (exists) return null;
+
+  const suspect = puzzle.suspects.find((s) => s.id === suspectId);
+  return {
+    id: clueId,
+    suspectId,
+    text: `${suspect?.name || suspectId} was in a corner.`,
+    condition: { type: 'corner', subject: suspectId },
+  };
 }
